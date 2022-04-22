@@ -6,8 +6,7 @@
   "scripts": {
     "build": "tsc && cp manifest.json ./dist",
     "lint": "eslint index.ts --quiet",
-    "typecheck": "tsc --noEmit",
-    "prepublishOnly": "yarn build"
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^5.20.0",
