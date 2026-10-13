@@ -1,26 +1,27 @@
-window.addEventListener('input', (event) => {
-  if (!event.target) return
-  const target = event.target as HTMLInputElement
-  if (['issue_title', 'pull_request_title'].includes(target.id)) {
-    const inputValue = target.value
-    const cursor = target.selectionStart
+const KEYWORD = 'deploy-dev'
+const MAX_ENV_NUM = 9
 
-    // deploy-devと入力された場合にtriggerを実行
-    if (
-      cursor &&
-      inputValue.substring(cursor - 'deploy-dev'.length, cursor) ===
-        'deploy-dev'
-    ) {
-      try {
-        trigger()
-      } catch (e) {
-        console.error(e)
-      }
-    }
+window.addEventListener('input', (event) => {
+  const target = event.target
+  // GitHubのUI変更でclass名が変わりやすいため、class名ではなく要素の種類で判定する
+  if (!(target instanceof HTMLInputElement) || target.type !== 'text') return
+
+  const inputValue = target.value
+  const cursor = target.selectionStart
+
+  // deploy-devと入力された場合にtriggerを実行
+  if (
+    cursor &&
+    inputValue.substring(cursor - KEYWORD.length, cursor) === KEYWORD
+  ) {
+    trigger(target, cursor).catch((e) => console.error(e))
   }
 })
 
-const trigger = async (): Promise<void> => {
+const trigger = async (
+  input: HTMLInputElement,
+  cursor: number,
+): Promise<void> => {
   // PRページからhtmlを取得
   const html = await fetchGithubPullRequestsHTML(location.href)
 
@@ -28,36 +29,57 @@ const trigger = async (): Promise<void> => {
   const prTitleList = getPrTitleList(html)
 
   // 現在使用中の環境の番号を取得
-  const usedEnvNumbers: number[] = getUsedEnvNumbers(prTitleList)
+  const usedEnvNumbers = getUsedEnvNumbers(prTitleList)
 
   // 利用可能な環境の数字
-  const availableEnvNum = [...Array(8).keys()]
+  const availableEnvNum = [...Array(MAX_ENV_NUM).keys()]
     .map((i) => i + 1)
     .find((index) => !usedEnvNumbers.includes(index))
 
   if (availableEnvNum) {
-    // 環境番号を含めた入力値の置き換え
-    const input = document.activeElement as HTMLInputElement | null
-    if (input) {
-      input.value = input.value.replace(
-        /deploy-dev/,
-        `deploy-dev${availableEnvNum}`,
-      )
-    }
+    // 環境番号を含めた入力値の置き換え (fetch中に入力が変わっていたら何もしない)
+    const value = input.value
+    if (value.substring(cursor - KEYWORD.length, cursor) !== KEYWORD) return
+
+    setInputValue(
+      input,
+      value.substring(0, cursor) + availableEnvNum + value.substring(cursor),
+    )
+    input.setSelectionRange(cursor + 1, cursor + 1)
   } else {
     alert('使える環境はありません')
   }
 }
 
 /**
+ * Reactで管理されたinputにも反映されるように、ネイティブのsetterで値を設定してinputイベントを発火する
+ */
+const setInputValue = (input: HTMLInputElement, value: string): void => {
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    'value',
+  )?.set
+  if (setter) {
+    setter.call(input, value)
+  } else {
+    input.value = value
+  }
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
+/**
  * 現在のurlからrepository名を取得して、GitHubのPull RequestページのHTMLを取得する
+ * 1ページ(25件)に収まらないケースを避けるため、タイトルにdeploy-devを含むopenなPRに絞り込む
  */
 const fetchGithubPullRequestsHTML = async (href: string): Promise<Document> => {
   const url = new URL(href)
   const pathnames = url.pathname.split('/')
-  const requestUrl = `${url.origin}/${pathnames[1]}/${pathnames[2]}/pulls` // ex: https://github.com/organization/repository
+  const requestUrl = new URL(
+    `${url.origin}/${pathnames[1]}/${pathnames[2]}/pulls`,
+  ) // ex: https://github.com/organization/repository/pulls
+  requestUrl.searchParams.set('q', `is:pr is:open in:title ${KEYWORD}`)
 
-  const response = await fetch(requestUrl)
+  const response = await fetch(requestUrl.toString())
   const data = await response.text()
 
   const parser = new DOMParser()
@@ -70,9 +92,13 @@ const fetchGithubPullRequestsHTML = async (href: string): Promise<Document> => {
  * htmlからPRのタイトル一覧を取得
  */
 const getPrTitleList = (html: Document): string[] => {
-  return Array.from(
-    html.querySelectorAll('.js-issue-row > div > div > a.markdown-title'),
-  ).map((a) => a.innerHTML)
+  const anchors = html.querySelectorAll(
+    [
+      'a[data-testid="listitem-title-link"]',
+      '.js-issue-row a.markdown-title', // 旧UI
+    ].join(','),
+  )
+  return Array.from(anchors).map((a) => (a.textContent || '').trim())
 }
 
 /**
@@ -81,10 +107,9 @@ const getPrTitleList = (html: Document): string[] => {
 const getUsedEnvNumbers = (prTitleList: string[]): number[] => {
   const usedEnvNumbers: number[] = []
   prTitleList.forEach((title) => {
-    const matchedTitle = (title.match(/^\[deploy-dev([1-9])\]/g) || []).join('')
-    const matchedNum = (matchedTitle.match(/[1-9]/g) || []).join('')
-    if (matchedNum) {
-      usedEnvNumbers.push(Number(matchedNum))
+    const matched = title.match(/^\[deploy-dev([1-9])\]/)
+    if (matched) {
+      usedEnvNumbers.push(Number(matched[1]))
     }
   })
 
