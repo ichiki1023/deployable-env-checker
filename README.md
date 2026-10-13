@@ -8,7 +8,7 @@ https://user-images.githubusercontent.com/7994534/164845412-2ce33929-39d6-4df6-8
 
 ## インストール
 
-1. [Releases](https://github.com/N-Iwata/deployable-env-checker/releases) から最新バージョンの `deployable-env-checker.zip` をダウンロード
+1. [Releases](https://github.com/ichiki1023/deployable-env-checker/releases) から最新バージョンの `deployable-env-checker.zip` をダウンロード
 2. ダウンロードしたファイルを解凍
 3. `chrome://extensions/` で　`デベロッパーモード` に変更
 4. `パッケージされていない拡張機能を読み込む` を選択して解凍した `deployable-env-checker` のフォルダを指定する
